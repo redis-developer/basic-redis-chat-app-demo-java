@@ -32,6 +32,7 @@ export const getAvatarByUserAndRoomId = (roomId = "1") => {
 
   const theId = (uidParsed * seed1 + roomIdParsed * seed2) % TOTAL_IMAGES;
 
+  // @ts-ignore
   return `${process.env.PUBLIC_URL}/avatars/${theId}.jpg`;
 };
 

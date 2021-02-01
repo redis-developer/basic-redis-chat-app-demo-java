@@ -1,6 +1,6 @@
 # Basic Redis Chat App Demo
 
-Showcases how to impliment chat app in ASP.NET Core, SignalR and Redis.
+Showcases how to impliment chat app in Java (Spring Boot) and Redis. This example uses **pub/sub** feature combined with **server-side events** for implementing the message communication between client and server.
 
 ## Try it out
 
@@ -26,18 +26,4 @@ Showcases how to impliment chat app in ASP.NET Core, SignalR and Redis.
 
 ## How to run it locally?
 
-#### Run frontend
-
-```sh
-cd client
-yarn install
-yarn start
-```
-
-#### Run backend
-
-```sh
-dotnet restore
-dotnet build
-dotnet run
-```
+???????

@@ -8,7 +8,8 @@ import moment from "moment";
 import { parseRoomName } from "./utils";
 import { LoadingScreen } from "./components/LoadingScreen";
 import Navbar from "./components/Navbar";
-import { useSocket, useUser } from "./hooks";
+import { useUser } from "./hooks";
+import { useSocket } from "./use-socket";
 
 const App = () => {
   const {
@@ -59,8 +60,11 @@ const useAppHandlers = () => {
     [dispatch, state.users]
   );
 
-  const { user, onLogIn, onLogOut, loading } = useUser(onUserLoaded, dispatch);
-  const [socket, connected] = useSocket(user, dispatch);
+  const { user, onLogIn, onLogOut: onLogOutA, loading } = useUser(
+    onUserLoaded,
+    dispatch
+  );
+  const [socket, connected, onLogOut] = useSocket(user, dispatch, onLogOutA);
 
   /** Socket joins specific rooms once they are added */
   useEffect(() => {
@@ -81,7 +85,6 @@ const useAppHandlers = () => {
           return;
         }
         newRooms.push({ ...room, connected: true });
-        socket.emit("room.join", room.id);
       });
       if (newRooms.length !== 0) {
         dispatch({ type: "set rooms", payload: newRooms });
@@ -108,6 +111,7 @@ const useAppHandlers = () => {
 
   /** Populate default rooms when user is not null */
   useEffect(() => {
+    /** @ts-ignore */
     if (Object.values(state.rooms).length === 0 && user !== null) {
       /** First of all fetch online users. */
       getOnlineUsers().then((users) => {

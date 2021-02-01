@@ -14,9 +14,11 @@ repositories {
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-web'
-	testImplementation('org.springframework.boot:spring-boot-starter-test') {
+    implementation 'android.arch.persistence.room:runtime:1.1.1'
+    testImplementation('org.springframework.boot:spring-boot-starter-test') {
 		exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
 	}
+    annotationProcessor 'android.arch.persistence.room:compiler:1.1.1'
 }
 
 test {

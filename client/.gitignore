@@ -21,5 +21,6 @@ yarn-debug.log*
 yarn-error.log*
 
 
-!build
+build
 .eslintcache
+

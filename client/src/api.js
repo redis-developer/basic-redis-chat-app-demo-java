@@ -19,7 +19,7 @@ export const getMe = () => {
  * @param {Array<number | string>} ids
  */
 export const getUsers = (ids) => {
-  return axios.get(url(`/users`), { params: { ids } }).then(x => x.data);
+  return axios.get(url(`/users`), { params: { ids: ids.reduce((x, y) => `${x},${y}`) } }).then(x => x.data);
 };
 
 /** Fetch users which are online */
@@ -89,3 +89,7 @@ export const getMessages = (id,
 export const addRoom = async (user1, user2) => {
   return axios.post(url(`/room`), { user1, user2 }).then(x => x.data);
 };
+
+export const emitMessage = async (type = "", user, message) => await axios.post(url('/chat/emit'), { type, user, data: JSON.stringify(message) });
+
+export const getEventSource = (userId) => new EventSource(url(`/chat/stream?userId=${userId}`));

@@ -1,1 +1,9 @@
 client/node_modules
+.gradle
+.idea
+.settings
+.vscode
+bin
+.classpath
+.project
+spring-boot.iml

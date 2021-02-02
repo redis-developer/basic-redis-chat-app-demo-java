@@ -31,11 +31,10 @@ public class Utils {
     }
 
     public static void createDemoData(StringRedisTemplate redisTemplate) throws Exception {
-        System.out.printf("Running create demo data...\n");
         // We store a counter for the total users and increment it on each register
         var totalUsersKeyExist = redisTemplate.hasKey("total_users"); // Client.KeyExistsAsync("total_users");
         if (!totalUsersKeyExist) {
-            System.out.printf("Initializng...\n");
+            System.out.print("Initializing demo data...\n");
             // This counter is used for the id
             redisTemplate.opsForValue().set("total_users", "0");
             // Some rooms have pre-defined names. When the clients attempts to fetch a room, an additional lookup

@@ -23,7 +23,3 @@ Showcases how to impliment chat app in Java (Spring Boot) and Redis. This exampl
 ## How it works?
 
 ![How it works](docs/screenshot001.png)
-
-## How to run it locally?
-
-???????

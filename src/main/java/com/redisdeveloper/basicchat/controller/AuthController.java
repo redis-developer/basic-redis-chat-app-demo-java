@@ -27,7 +27,7 @@ public class AuthController {
      */
     @RequestMapping(value = "/login", method = RequestMethod.POST)
     public ResponseEntity<User> login(@RequestBody LoginData loginData, HttpSession session) {
-        String username = loginData.username;
+        String username = loginData.getUsername();
 
         String usernameKey = String.format("username:%s", username);
         boolean userExists = redisTemplate.hasKey(usernameKey);

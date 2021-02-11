@@ -1,10 +1,15 @@
 package com.redisdeveloper.basicchat.model;
 
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
 public class Message {
-    public String from;
-    public int date;
-    public String message;
-    public String roomId;
+    private String from;
+    private int date;
+    private String message;
+    private String roomId;
 
     public Message(String from, int date, String message, String roomId) {
         this.from = from;

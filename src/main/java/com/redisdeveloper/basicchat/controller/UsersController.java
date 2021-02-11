@@ -42,7 +42,7 @@ public class UsersController {
                                 redisTemplate.opsForSet().isMember("online_users", id.toString())
                         )
                 )
-                .collect(Collectors.toMap(u -> String.format("%s", u.id), u -> u,
+                .collect(Collectors.toMap(u -> String.format("%s", u.getId()), u -> u,
                         (u, v) -> {
                             throw new IllegalStateException(
                                     String.format("Cannot have 2 values (%s, %s) for the same key", u, v)

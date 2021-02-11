@@ -1,6 +1,11 @@
 package com.redisdeveloper.basicchat.model;
 
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
 public class LoginData {
-    public String username;
-    public String password;
+    private String username;
+    private String password;
 }

@@ -76,32 +76,32 @@ public class ChatController {
      */
     @RequestMapping(value = "/emit", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Object> get(@RequestBody ChatControllerMessage chatMessage) {
-        var gson = new Gson();
+        Gson gson = new Gson();
 
         String serialized;
 
-        if (chatMessage.type.equals("message")) {
+        if (chatMessage.getType().equals("message")) {
             // We've received a message from user. It's necessary to deserialize it first.
-            var message = gson.fromJson(chatMessage.data, Message.class);
+            Message message = gson.fromJson(chatMessage.getData(), Message.class);
             // Add the user who sent the message to online list.
-            redisTemplate.opsForSet().add("online_users", message.from);
+            redisTemplate.opsForSet().add("online_users", message.getFrom());
             // Write the message to DB.
-            var roomKey = String.format("room:%s", message.roomId);
-            redisTemplate.opsForZSet().add(roomKey, gson.toJson(message), message.date);
+            var roomKey = String.format("room:%s", message.getRoomId());
+            redisTemplate.opsForZSet().add(roomKey, gson.toJson(message), message.getDate());
             // Finally create the serialized output which would go to pub/sub
-            serialized = gson.toJson(new PubSubMessage<>(chatMessage.type, message));
-        } else if (chatMessage.type.startsWith("user.")) {
+            serialized = gson.toJson(new PubSubMessage<>(chatMessage.getType(), message));
+        } else if (chatMessage.getType().startsWith("user.")) {
             // User-related events cover connection cases.
-            serialized = gson.toJson(new PubSubMessage<>(chatMessage.type, gson.fromJson(chatMessage.data, User.class)));
+            serialized = gson.toJson(new PubSubMessage<>(chatMessage.getType(), gson.fromJson(chatMessage.getData(), User.class)));
             // Remove user from "online" set
-            if (chatMessage.type.equals("user.connected")) {
-                redisTemplate.opsForSet().add("online_users", String.format("%d", chatMessage.user.id));
+            if (chatMessage.getType().equals("user.connected")) {
+                redisTemplate.opsForSet().add("online_users", String.format("%d", chatMessage.getUser().getId()));
             } else {
-                redisTemplate.opsForSet().remove("online_users", String.format("%d", chatMessage.user.id));
+                redisTemplate.opsForSet().remove("online_users", String.format("%d", chatMessage.getUser().getId()));
             }
         } else {
             // This is an unknown message type. For those we just send the raw string in the data parameter.
-            serialized = gson.toJson(new PubSubMessage<>(chatMessage.type, chatMessage.data));
+            serialized = gson.toJson(new PubSubMessage<>(chatMessage.getType(), chatMessage.getData()));
         }
 
         // Finally, send the serialized json to Redis.

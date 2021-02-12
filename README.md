@@ -23,3 +23,22 @@ Showcases how to impliment chat app in Java (Spring Boot) and Redis. This exampl
 ## How it works?
 
 ![How it works](docs/screenshot001.png)
+
+## How to run it locally?
+
+Go to src/main/resources/application.properties and provide the following fields
+
+- redis.endpointUrl: Redis server URI
+- redis.password: Password to the server
+
+#### Run Redis server:
+
+```
+redis-server
+```
+
+#### Run full app:
+
+```
+./run.sh
+```

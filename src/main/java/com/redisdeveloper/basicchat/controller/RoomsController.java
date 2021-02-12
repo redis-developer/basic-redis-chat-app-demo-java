@@ -3,6 +3,9 @@ package com.redisdeveloper.basicchat.controller;
 import com.google.gson.Gson;
 import com.redisdeveloper.basicchat.model.Message;
 import com.redisdeveloper.basicchat.model.Room;
+import com.redisdeveloper.basicchat.model.User;
+import com.redisdeveloper.basicchat.repository.RoomsRepository;
+import com.redisdeveloper.basicchat.repository.UsersRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,8 +17,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
 
-import static com.redisdeveloper.basicchat.config.RedisTemplateKeys.*;
-
 
 @RestController
 @RequestMapping("/rooms")
@@ -24,32 +25,32 @@ public class RoomsController {
     private static final Logger LOGGER = LoggerFactory.getLogger(AuthController.class);
 
     @Autowired
-    private StringRedisTemplate redisTemplate;
+    private RoomsRepository roomsRepository;
+
+    @Autowired
+    private UsersRepository usersRepository;
 
     /**
      * Get rooms for specific user id.
      */
     @GetMapping(value = "user/{userId}", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<List<Room>> getRooms(@PathVariable int userId) {
-        String userRoomsKey = String.format(USER_ROOMS_KEY, userId);
-        Set<String> roomIds = redisTemplate.opsForSet().members(userRoomsKey);
+        Set<String> roomIds = roomsRepository.getUserRoomIds(userId);
         if (roomIds == null) {
             return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
         }
         List<Room> rooms = new ArrayList<>();
 
         for (String roomId : roomIds) {
-            boolean roomExists = redisTemplate.hasKey(String.format("room:%s", roomId));
+            boolean roomExists = roomsRepository.isRoomExists(roomId);
             if (roomExists){
-                String roomNameKey = String.format(ROOM_NAME_KEY, roomId);
-                String name = redisTemplate.opsForValue().get(roomNameKey);
+                String name = roomsRepository.getRoomNameById(roomId);
                 if (name == null) {
                     // private chat case
-                    String[] userIds = parseUserIds(roomId);
-                    if (userIds == null){
-                        return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+                    Room privateRoom = handlePrivateRoomCase(roomId);
+                    if (privateRoom == null){
+                        return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
                     }
-                    Room privateRoom = createPrivateRoom(roomId, userIds);
                     rooms.add(privateRoom);
                 } else {
                     rooms.add(new Room(roomId, name));
@@ -62,17 +63,21 @@ public class RoomsController {
     private String[] parseUserIds(String roomId){
         String[] userIds = roomId.split(":");
         if (userIds.length != 2){
-            return null;
+            LOGGER.error("User ids not parsed properly");
+            throw new RuntimeException("Unable to parse users ids from roomId: "+roomId);
         }
         return userIds;
     }
 
-    private Room createPrivateRoom(String roomId, String[] userIds){
-        String firstUserIdKey = String.format(USER_ID_KEY, userIds[0]);
-        String secondUserIdKey = String.format(USER_ID_KEY, userIds[1]);
-        String firstUsername = (String) redisTemplate.opsForHash().get(firstUserIdKey, USERNAME_HASH_KEY);
-        String secondUsername = (String) redisTemplate.opsForHash().get(secondUserIdKey, USERNAME_HASH_KEY);
-        return new Room(roomId, firstUsername, secondUsername);
+    private Room handlePrivateRoomCase(String roomId){
+        String[] userIds = parseUserIds(roomId);
+        User firstUser = usersRepository.getUserById(Integer.parseInt(userIds[0]));
+        User secondUser = usersRepository.getUserById(Integer.parseInt(userIds[1]));
+        if (firstUser == null || secondUser == null){
+            LOGGER.error("Users were not found by ids: "+ Arrays.toString(userIds));
+            return null;
+        }
+        return new Room(roomId, firstUser.getUsername(), secondUser.getUsername());
     }
 
     /**
@@ -80,11 +85,10 @@ public class RoomsController {
      */
     @GetMapping(value = "messages/{roomId}", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<List<Message>> getMessages(@PathVariable String roomId, @RequestParam int offset, @RequestParam int size) {
-        String roomKey = String.format(ROOM_KEY, roomId);
-        boolean roomExists = redisTemplate.hasKey(roomKey);
+        boolean roomExists = roomsRepository.isRoomExists(roomId);
         List<Message> messages = new ArrayList<>();
         if (roomExists) {
-            Set<String> values = redisTemplate.opsForZSet().reverseRange(roomKey, offset, offset + size);
+            Set<String> values = roomsRepository.getMessages(roomId, offset, size);
             for (String value : values) {
                 messages.add(deserialize(value));
             }

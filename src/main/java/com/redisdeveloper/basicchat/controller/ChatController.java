@@ -3,22 +3,31 @@ package com.redisdeveloper.basicchat.controller;
 import com.google.gson.Gson;
 import com.redisdeveloper.basicchat.model.*;
 import com.redisdeveloper.basicchat.service.RedisMessageSubscriber;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.adapter.MessageListenerAdapter;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
+
+import static com.redisdeveloper.basicchat.config.RedisTemplateKeys.ONLINE_USERS_KEY;
+import static com.redisdeveloper.basicchat.config.RedisTemplateKeys.ROOM_KEY;
 
 
 @RestController
 @RequestMapping("/chat")
 public class ChatController {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ChatController.class);
     @Autowired
     StringRedisTemplate redisTemplate;
 
@@ -30,10 +39,9 @@ public class ChatController {
 
     @RequestMapping("/stream")
     public SseEmitter streamSseMvc(@RequestParam int userId) {
-        var ref = new Object() {
-            boolean isComplete = false;
-        };
+        AtomicBoolean isComplete = new AtomicBoolean(false);
         SseEmitter emitter = new SseEmitter();
+
         Function<String, Integer> handler = (String message) -> {
             SseEmitter.SseEventBuilder event = SseEmitter.event()
                     .data(message);
@@ -51,15 +59,14 @@ public class ChatController {
         // that such client-server subscription exists.
         //
         // We send the callback to the subscriber with the SSE instance for sending server-side events.
-        var redisMessageSubscriber = (RedisMessageSubscriber) messageListener.getDelegate();
-        assert redisMessageSubscriber != null;
+        RedisMessageSubscriber redisMessageSubscriber = (RedisMessageSubscriber) messageListener.getDelegate();
         redisMessageSubscriber.attach(handler);
 
         // Make sure all life-time methods are covered here and remove the handler from the global subscriber.
         Runnable onDetach = () -> {
             redisMessageSubscriber.detach(handler);
-            if (!ref.isComplete) {
-                ref.isComplete = true;
+            if (!isComplete.get()) {
+                isComplete.set(true);
                 emitter.complete();
             }
         };
@@ -78,34 +85,53 @@ public class ChatController {
     public ResponseEntity<Object> get(@RequestBody ChatControllerMessage chatMessage) {
         Gson gson = new Gson();
 
-        String serialized;
+        String serializedMessage;
 
-        if (chatMessage.getType().equals("message")) {
-            // We've received a message from user. It's necessary to deserialize it first.
-            Message message = gson.fromJson(chatMessage.getData(), Message.class);
-            // Add the user who sent the message to online list.
-            redisTemplate.opsForSet().add("online_users", message.getFrom());
-            // Write the message to DB.
-            var roomKey = String.format("room:%s", message.getRoomId());
-            redisTemplate.opsForZSet().add(roomKey, gson.toJson(message), message.getDate());
-            // Finally create the serialized output which would go to pub/sub
-            serialized = gson.toJson(new PubSubMessage<>(chatMessage.getType(), message));
-        } else if (chatMessage.getType().startsWith("user.")) {
+        LOGGER.info("Received message: "+chatMessage.toString());
+
+        if (chatMessage.getType() == MessageType.MESSAGE) {
+            serializedMessage = handleRegularMessageCase(chatMessage);
+        } else if (chatMessage.getType() == MessageType.USER_CONNECTED
+                || chatMessage.getType() == MessageType.USER_DISCONNECTED) {
             // User-related events cover connection cases.
-            serialized = gson.toJson(new PubSubMessage<>(chatMessage.getType(), gson.fromJson(chatMessage.getData(), User.class)));
-            // Remove user from "online" set
-            if (chatMessage.getType().equals("user.connected")) {
-                redisTemplate.opsForSet().add("online_users", String.format("%d", chatMessage.getUser().getId()));
-            } else {
-                redisTemplate.opsForSet().remove("online_users", String.format("%d", chatMessage.getUser().getId()));
-            }
+            serializedMessage = handleUserConnectionCase(chatMessage);
         } else {
             // This is an unknown message type. For those we just send the raw string in the data parameter.
-            serialized = gson.toJson(new PubSubMessage<>(chatMessage.getType(), chatMessage.getData()));
+            serializedMessage = gson.toJson(new PubSubMessage<>(chatMessage.getType().value(), chatMessage.getData()));
         }
 
         // Finally, send the serialized json to Redis.
-        redisTemplate.convertAndSend(topic.getTopic(), serialized);
-        return ResponseEntity.status(200).build();
+        redisTemplate.convertAndSend(topic.getTopic(), serializedMessage);
+        LOGGER.info("Saved message to redis: "+serializedMessage);
+
+        return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    private String handleRegularMessageCase(ChatControllerMessage chatMessage){
+        Gson gson = new Gson();
+        // We've received a message from user. It's necessary to deserialize it first.
+        Message message = gson.fromJson(chatMessage.getData(), Message.class);
+        // Add the user who sent the message to online list.
+        redisTemplate.opsForSet().add(ONLINE_USERS_KEY, message.getFrom());
+        // Write the message to DB.
+        String roomKey = String.format(ROOM_KEY, message.getRoomId());
+        redisTemplate.opsForZSet().add(roomKey, gson.toJson(message), message.getDate());
+        // Finally create the serialized output which would go to pub/sub
+        return gson.toJson(new PubSubMessage<>(chatMessage.getType().value(), message));
+    }
+
+    private String handleUserConnectionCase(ChatControllerMessage chatMessage){
+        Gson gson = new Gson();
+        int userId = chatMessage.getUser().getId();
+        String messageType = chatMessage.getType().value();
+        User serializedUser = gson.fromJson(chatMessage.getData(), User.class);
+        String serializedMessage = gson.toJson(new PubSubMessage<>(messageType, serializedUser));
+        if (chatMessage.getType() == MessageType.USER_CONNECTED) {
+            redisTemplate.opsForSet().add(ONLINE_USERS_KEY, String.format("%d", userId));
+        } else {
+            // Remove user from "online" set
+            redisTemplate.opsForSet().remove(ONLINE_USERS_KEY, String.format("%d", userId));
+        }
+        return serializedMessage;
     }
 }

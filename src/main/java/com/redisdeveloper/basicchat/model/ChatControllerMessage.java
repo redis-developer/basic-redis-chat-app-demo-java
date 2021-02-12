@@ -6,7 +6,8 @@ import lombok.Setter;
 @Getter
 @Setter
 public class ChatControllerMessage {
-    private String type;
+    private MessageType type;
     private User user;
     private String data;
+
 }

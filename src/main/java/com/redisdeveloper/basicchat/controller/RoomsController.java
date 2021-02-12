@@ -4,15 +4,16 @@ import com.google.gson.Gson;
 import com.redisdeveloper.basicchat.model.Message;
 import com.redisdeveloper.basicchat.model.Room;
 import com.redisdeveloper.basicchat.model.User;
+import com.redisdeveloper.basicchat.repository.RoomsRepository;
+import com.redisdeveloper.basicchat.repository.UsersRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
 
@@ -21,67 +22,87 @@ import java.util.*;
 @RequestMapping("/rooms")
 public class RoomsController {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(AuthController.class);
+
     @Autowired
-    private StringRedisTemplate redisTemplate;
+    private RoomsRepository roomsRepository;
+
+    @Autowired
+    private UsersRepository usersRepository;
 
     /**
      * Get rooms for specific user id.
      */
-    @RequestMapping(value = "user/{userId}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<Room[]> getRooms(@PathVariable int userId) {
-        var roomIds = redisTemplate.opsForSet().members(String.format("user:%d:rooms", userId));
+    @GetMapping(value = "user/{userId}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<List<Room>> getRooms(@PathVariable int userId) {
+        Set<String> roomIds = roomsRepository.getUserRoomIds(userId);
         if (roomIds == null) {
-            return (ResponseEntity<Room[]>) ResponseEntity.status(400);
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
         }
-        var rooms = new LinkedList<Room>();
+        List<Room> rooms = new ArrayList<>();
 
         for (String roomId : roomIds) {
-            String name = redisTemplate.opsForValue().get(String.format("room:%s:name", roomId));
-            if (name == null) {
-                // It's a room without a name, likey the one with private messages
-                var roomExists = redisTemplate.hasKey(String.format("room:%s", roomId));
-                if (!roomExists) {
-                    continue;
+            boolean roomExists = roomsRepository.isRoomExists(roomId);
+            if (roomExists){
+                String name = roomsRepository.getRoomNameById(roomId);
+                if (name == null) {
+                    // private chat case
+                    Room privateRoom = handlePrivateRoomCase(roomId);
+                    if (privateRoom == null){
+                        return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+                    }
+                    rooms.add(privateRoom);
+                } else {
+                    rooms.add(new Room(roomId, name));
                 }
-
-                var userIds = roomId.split(":");
-                if (userIds.length != 2) {
-                    return ResponseEntity.status(400).build();
-                }
-                rooms.add(new Room(roomId,
-                        (String) redisTemplate.opsForHash().get(String.format("user:%s", userIds[0]), "username"),
-                        (String) redisTemplate.opsForHash().get(String.format("user:%s", userIds[1]), "username")
-                ));
-            } else {
-                rooms.add(new Room(roomId, name));
             }
         }
+        return new ResponseEntity<>(rooms, HttpStatus.OK);
+    }
 
-        return new ResponseEntity(rooms.toArray(), HttpStatus.OK);
+    private String[] parseUserIds(String roomId){
+        String[] userIds = roomId.split(":");
+        if (userIds.length != 2){
+            LOGGER.error("User ids not parsed properly");
+            throw new RuntimeException("Unable to parse users ids from roomId: "+roomId);
+        }
+        return userIds;
+    }
+
+    private Room handlePrivateRoomCase(String roomId){
+        String[] userIds = parseUserIds(roomId);
+        User firstUser = usersRepository.getUserById(Integer.parseInt(userIds[0]));
+        User secondUser = usersRepository.getUserById(Integer.parseInt(userIds[1]));
+        if (firstUser == null || secondUser == null){
+            LOGGER.error("Users were not found by ids: "+ Arrays.toString(userIds));
+            return null;
+        }
+        return new Room(roomId, firstUser.getUsername(), secondUser.getUsername());
     }
 
     /**
      * Get Messages.
      */
-    @RequestMapping(value = "messages/{roomId}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<Message[]> getMessages(@PathVariable String roomId, @RequestParam int offset, @RequestParam int size) {
-        var roomKey = String.format("room:%s", roomId);
-        var roomExists = redisTemplate.hasKey(roomKey);
-        var messages = new LinkedList<Message>();
-
+    @GetMapping(value = "messages/{roomId}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<List<Message>> getMessages(@PathVariable String roomId, @RequestParam int offset, @RequestParam int size) {
+        boolean roomExists = roomsRepository.isRoomExists(roomId);
+        List<Message> messages = new ArrayList<>();
         if (roomExists) {
-            var gson = new Gson();
-
-            var values = redisTemplate.opsForZSet().reverseRange(roomKey, offset, offset + size);
-
-            for (var value : values) {
-                try {
-                    messages.add(gson.fromJson(value, Message.class));
-                } catch (Exception e) {
-                    System.out.println(String.format("Couldn't deserialize json: %s", value));
-                }
+            Set<String> values = roomsRepository.getMessages(roomId, offset, size);
+            for (String value : values) {
+                messages.add(deserialize(value));
             }
         }
-        return new ResponseEntity(messages.toArray(), HttpStatus.OK);
+        return new ResponseEntity<>(messages, HttpStatus.OK);
+    }
+
+    private Message deserialize(String value){
+        Gson gson = new Gson();
+        try {
+            return gson.fromJson(value, Message.class);
+        } catch (Exception e) {
+            LOGGER.error(String.format("Couldn't deserialize json: %s", value), e);
+        }
+        return null;
     }
 }

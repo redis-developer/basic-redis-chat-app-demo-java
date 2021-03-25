@@ -22,15 +22,6 @@ public class RedisAppConfig {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RedisAppConfig.class);
 
-    @Value("#{'${redis.endpointUrl}'.split(':')[0] ?: \"127.0.0.1\"}")
-    private String REDIS_HOST;
-
-    @Value("#{'${redis.endpointUrl}'.split(':')[1] ?: \"6379\"}")
-    private String REDIS_PORT;
-
-    @Value("${redis.password:null}")
-    private String REDIS_PASSWORD;
-
     @Bean
     @ConditionalOnMissingBean(name = "redisTemplate")
     @Primary
@@ -59,11 +50,29 @@ public class RedisAppConfig {
 
     @Bean
     public RedisConnectionFactory redisConnectionFactory() {
-        RedisStandaloneConfiguration config =
-                new RedisStandaloneConfiguration(REDIS_HOST, Integer.parseInt(REDIS_PORT));
-        config.setPassword(REDIS_PASSWORD);
-        LOGGER.info("REDIS: Connecting to "+REDIS_HOST+":"+REDIS_PORT+" with password: "+REDIS_PASSWORD);
+        // Read environment variables
+        String endpointUrl = System.getenv("REDIS_ENDPOINT_URL");
+        if (endpointUrl == null) {
+            endpointUrl = "127.0.0.1:6379";
+        }
+        String password = System.getenv("REDIS_PASSWORD");
 
+        String[] urlParts = endpointUrl.split(":");
+
+        String host = urlParts[0];
+        String port = "6379";
+
+        if (urlParts.length > 1) {
+            port = urlParts[1];
+        }
+
+        RedisStandaloneConfiguration config = new RedisStandaloneConfiguration(host, Integer.parseInt(port));
+
+        System.out.printf("Connecting to %s:%s with password: %s%n", host, port, password);
+
+        if (password != null) {
+            config.setPassword(password);
+        }
         return new LettuceConnectionFactory(config);
     }
 }

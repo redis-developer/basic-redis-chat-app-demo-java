@@ -1,16 +1,21 @@
-# Basic Redis Chat App Demo  (Java/Spring)
+# Basic Redis Chat App Demo (Java/Spring)
+
 Showcases how to implement chat app in Java (Spring Boot) and Redis. This example uses **pub/sub** feature combined with **server-side events** for implementing the message communication between client and server.
 
 <a href="https://raw.githubusercontent.com/redis-developer/basic-redis-chat-app-demo-dotnet/main/docs/screenshot000.png?raw=true"><img src="https://raw.githubusercontent.com/redis-developer/basic-redis-chat-app-demo-dotnet/main/docs/screenshot000.png?raw=true" width="49%"></a>
 <a href="https://raw.githubusercontent.com/redis-developer/basic-redis-chat-app-demo-dotnet/main/docs/screenshot001.png?raw=true"><img src="https://raw.githubusercontent.com/redis-developer/basic-redis-chat-app-demo-dotnet/main/docs/screenshot001.png?raw=true" width="49%"></a>
 
-
 ## Technical Stacks
-* Frontend - *React*, *Socket* (@microsoft/signalr)
-* Backend - *Spring Boot 2*, *Redis*
+
+- Frontend - _React_, _Socket_ (@microsoft/signalr)
+- Backend - _Spring Boot 2_, _Redis_
+
+## How it works?
 
 ## Database Schema
+
 ### User
+
 ```Java
 public class User {
   private int id;
@@ -18,14 +23,18 @@ public class User {
   private boolean isOnline;
 }
 ```
+
 ### ChatRoom
+
 ```Java
 public class Room {
   private String id;
   private String[] names;
 }
 ```
+
 ### ChatRoomMessage
+
 ```Java
 public class Message {
   private String from;
@@ -35,127 +44,67 @@ public class Message {
 }
 ```
 
-## How document and each data type is stored in Redis.
+### Initialization
 
-### How do you store a document?
-We want to store a document(like a user) in redis.
-Basically, *indexable* and *sortable* fields are stored in hash while we store rest of the fields in RedisJSON. We can apply RediSearch queries once we store in hash.
+For simplicity, a key with **total_users** value is checked: if it does not exist, we fill the Redis database with initial data.
+`EXISTS total_users` (checks if the key exists)
+
+The demo data initialization is handled in multiple steps:
+
+**Creating of demo users:**
+We create a new user id: `INCR total_users`. Then we set a user ID lookup key by user name: **_e.g._** `SET username:nick user:1`. And finally, the rest of the data is written to the hash set: **_e.g._** `HSET user:1 username "nick" password "bcrypt_hashed_password"`.
+
+Additionally, each user is added to the default "General" room. For handling rooms for each user, we have a set that holds the room ids. Here's an example command of how to add the room: **_e.g._** `SADD user:1:rooms "0"`.
+
+**Populate private messages between users.**
+At first, private rooms are created: if a private room needs to be established, for each user a room id: `room:1:2` is generated, where numbers correspond to the user ids in ascending order.
+
+**_E.g._** Create a private room between 2 users: `SADD user:1:rooms 1:2` and `SADD user:2:rooms 1:2`.
+
+Then we add messages to this room by writing to a sorted set:
+
+**_E.g._** `ZADD room:1:2 1615480369 "{'from': 1, 'date': 1615480369, 'message': 'Hello', 'roomId': '1:2'}"`.
+
+We use a stringified _JSON_ for keeping the message structure and simplify the implementation details for this demo-app.
+
+**Populate the "General" room with messages.** Messages are added to the sorted set with id of the "General" room: `room:0`
+
+### Registration
+
+![How it works](docs/screenshot000.png)
 
 Redis is used mainly as a database to keep the user/messages data and for sending messages between connected servers.
 
-The real-time functionality is handled by **Server Sent Events** for server->client messaging. Additionally each server instance subscribes to the `MESSAGES` channel of pub/sub and dispatches messages once they arrive.
+#### How the data is stored:
 
 - The chat data is stored in various keys and various data types.
   - User data is stored in a hash set where each user entry contains the next values:
     - `username`: unique user name;
     - `password`: hashed password
-  - Additionally a set of rooms is associated with user
-  - **Rooms** are sorted sets which contains messages where score is the timestamp for each message
-    - Each room has a name associated with it
-  - **Online** set is global for all users is used for keeping track on which user is online.
 
 * User hash set is accessed by key `user:{userId}`. The data for it stored with `HSET key field data`. User id is calculated by incrementing the `total_users`.
-  * E.g `INCR total_users`
+
+  - E.g `INCR total_users`
 
 * Username is stored as a separate key (`username:{username}`) which returns the userId for quicker access.
-  * E.g `SET username:Alex 4`
+  - E.g `SET username:Alex 4`
 
-* Rooms which user belongs too are stored at `user:{userId}:rooms` as a set of room ids.
-  * E.g `SADD user:Alex:rooms 1`
+#### How the data is accessed:
 
-* Messages are stored at `room:{roomId}` key in a sorted set (as mentioned above). They are added with `ZADD room:{roomId} {timestamp} {message}` command. Message is serialized to an app-specific JSON string.
-  * E.g `ZADD room:0 1617197047 { "From": "2", "Date": 1617197047, "Message": "Hello", "RoomId": "1:2" }`
+- **Get User** `HGETALL user:{id}`
 
-### How the data is accessed:
+  - E.g `HGETALL user:2`, where we get data for the user with id: 2.
 
-**Get User** `HGETALL user:{id}`. Example: `HGETALL user:2`, where we get data for the user with id: 2.
+- **Online users:** will return ids of users which are online
+  - E.g `SMEMBERS online_users`
 
-**Online users:** `SMEMBERS online_users`. This will return ids of users which are online
+#### Code Example: Prepare User Data in Redis HashSet
 
-**Get room ids of a user:** `SMEMBERS user:{id}:rooms`. Example: `SMEMBERS user:2:rooms`. This will return IDs of rooms for user with ID: 2
-
-**Get list of messages** `ZREVRANGE room:{roomId} {offset_start} {offset_end}`.
-Example: `ZREVRANGE room:1:2 0 50` will return 50 messages with 0 offsets for the private room between users with IDs 1 and 2.
-
-
-## How it works?
-
-### Sign in
-![How it works](docs/screenshot000.png)
-
-### Chats
-![How it works](docs/screenshot001.png)
-
-The chat server works as a basic *REST* API which involves keeping the session and handling the user state in the chat rooms (besides the WebSocket/real-time part).
-
-When the server starts, the initialization step occurs. At first, a new Redis connection is established and it's checked whether it's needed to load the demo data.
-
-## Using in Java
-### Startup
-```Java
-public class RedisAppConfig {
-    
-    //...
-    
-    public RedisConnectionFactory redisConnectionFactory() {
-        // Read environment variables
-        String endpointUrl = System.getenv("REDIS_ENDPOINT_URL");
-        if (endpointUrl == null) {
-            endpointUrl = "127.0.0.1:6379";
-        }
-        String password = System.getenv("REDIS_PASSWORD");
-
-        String[] urlParts = endpointUrl.split(":");
-
-        String host = urlParts[0];
-        String port = "6379";
-
-        if (urlParts.length > 1) {
-            port = urlParts[1];
-        }
-
-        RedisStandaloneConfiguration config = new RedisStandaloneConfiguration(host, Integer.parseInt(port));
-
-        System.out.printf("Connecting to %s:%s with password: %s%n", host, port, password);
-
-        if (password != null) {
-            config.setPassword(password);
-        }
-        return new LettuceConnectionFactory(config);
-    }
-}
-```
-
-### Initialization
-For simplicity, a key with **total_users** value is checked: if it does not exist, we fill the Redis database with initial data.
-```EXISTS total_users``` (checks if the key exists)
-
-
-The demo data initialization is handled in multiple steps:
-
-**Creating of demo users:**
-We create a new user id: `INCR total_users`. Then we set a user ID lookup key by user name: ***e.g.*** `SET username:nick user:1`. And finally, the rest of the data is written to the hash set: ***e.g.*** `HSET user:1 username "nick" password "bcrypt_hashed_password"`.
-
-Additionally, each user is added to the default "General" room. For handling rooms for each user, we have a set that holds the room ids. Here's an example command of how to add the room: ***e.g.*** `SADD user:1:rooms "0"`.
-
-**Populate private messages between users.**
-At first, private rooms are created: if a private room needs to be established, for each user a room id: `room:1:2` is generated, where numbers correspond to the user ids in ascending order.
-
-***E.g.*** Create a private room between 2 users: `SADD user:1:rooms 1:2` and `SADD user:2:rooms 1:2`.
-
-Then we add messages to this room by writing to a sorted set:
-***E.g.*** `ZADD room:1:2 1615480369 "{'from': 1, 'date': 1615480369, 'message': 'Hello', 'roomId': '1:2'}"`.
-
-We use a stringified *JSON* for keeping the message structure and simplify the implementation details for this demo-app.
-
-**Populate the "General" room with messages.** Messages are added to the sorted set with id of the "General" room: `room:0`
-
-### Example: Prepare User Data in Redis HashSet
 ```Java
 public class DemoDataCreator {
-    
+
     //...
-    
+
     private User createUser(String username) {
         BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
         String usernameKey = String.format("username:%s", username);
@@ -183,42 +132,41 @@ public class DemoDataCreator {
 }
 ```
 
-### Example: Prepare Room Data in Redis SortedSet
-```Java
-public class DemoDataCreator {
-    
-    //...
-    
-    private Room createPrivateRoom(Integer user1, Integer user2) {
-        String roomId = getPrivateRoomId(user1, user2);
+### Rooms
 
-        String userRoomkey1 = String.format("user:%d:rooms", user1);
-        String userRoomkey2 = String.format("user:%d:rooms", user2);
+![How it works](docs/screenshot001.png)
 
-        redisTemplate.opsForSet().add(userRoomkey1, roomId);
-        redisTemplate.opsForSet().add(userRoomkey2, roomId);
+#### How the data is stored:
 
-        String key1 = String.format("user:%d", user1);
-        String key2 = String.format("user:%d", user2);
+Each user has a set of rooms associated with them.
 
-        return new Room(
-                roomId,
-                (String) redisTemplate.opsForHash().get(key1, "username"),
-                (String) redisTemplate.opsForHash().get(key2, "username")
-        );
-    }
-    //...
-}
-```
+**Rooms** are sorted sets which contains messages where score is the timestamp for each message. Each room has a name associated with it.
 
-### Example: Get all My Rooms
+- Rooms which user belongs too are stored at `user:{userId}:rooms` as a set of room ids.
+
+  - E.g `SADD user:Alex:rooms 1`
+
+- Set room name: `SET room:{roomId}:name {name}`
+  - E.g `SET room:1:name General`
+
+#### How the data is accessed:
+
+- **Get room name** `GET room:{roomId}:name`.
+
+  - E. g `GET room:0:name`. This should return "General"
+
+- **Get room ids of a user:** `SMEMBERS user:{id}:rooms`.
+  - E. g `SMEMBERS user:2:rooms`. This will return IDs of rooms for user with ID: 2
+
+#### Code Example: Get all My Rooms
+
 ```Java
 @RestController
 @RequestMapping("/rooms")
 public class RoomsController {
-    
+
     //...
-    
+
     @GetMapping(value = "user/{userId}", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<List<Room>> getRooms(@PathVariable int userId) {
         Set<String> roomIds = roomsRepository.getUserRoomIds(userId);
@@ -249,7 +197,28 @@ public class RoomsController {
 }
 ```
 
-### Example: Send Message
+### Messages
+
+#### Pub/sub
+
+After initialization, a pub/sub subscription is created: `SUBSCRIBE MESSAGES`. At the same time, each server instance will run a listener on a message on this channel to receive real-time updates.
+
+Again, for simplicity, each message is serialized to **_JSON_**, which we parse and then handle in the same manner, as WebSocket messages.
+
+Pub/sub allows connecting multiple servers written in different platforms without taking into consideration the implementation detail of each server.
+
+#### How the data is stored:
+
+- Messages are stored at `room:{roomId}` key in a sorted set (as mentioned above). They are added with `ZADD room:{roomId} {timestamp} {message}` command. Message is serialized to an app-specific JSON string.
+  - E.g `ZADD room:0 1617197047 { "From": "2", "Date": 1617197047, "Message": "Hello", "RoomId": "1:2" }`
+
+#### How the data is accessed:
+
+- **Get list of messages** `ZREVRANGE room:{roomId} {offset_start} {offset_end}`.
+  - E.g `ZREVRANGE room:1:2 0 50` will return 50 messages with 0 offsets for the private room between users with IDs 1 and 2.
+
+#### Code Example: Send Message
+
 ```Java
 @RestController
 @RequestMapping("/chat")
@@ -297,14 +266,9 @@ public class ChatController {
 }
 ```
 
-### Pub/sub
-After initialization, a pub/sub subscription is created: `SUBSCRIBE MESSAGES`. At the same time, each server instance will run a listener on a message on this channel to receive real-time updates.
+### Session handling
 
-Again, for simplicity, each message is serialized to ***JSON***, which we parse and then handle in the same manner, as WebSocket messages.
-
-Pub/sub allows connecting multiple servers written in different platforms without taking into consideration the implementation detail of each server.
-
-### Real-time chat and session handling
+The chat server works as a basic _REST_ API which involves keeping the session and handling the user state in the chat rooms (besides the WebSocket/real-time part).
 
 When a WebSocket/real-time server is instantiated, which listens for the next events:
 
@@ -328,11 +292,50 @@ Note we send additional data related to the type of the message and the server i
 
 `data` is method-specific information. In the example above it's related to the new message.
 
-___
+#### How the data is stored / accessed:
+
+The session data is stored in Redis by utilizing the [**Letuce**](https://github.com/lettuce-io/lettuce-core) client.
+
+##### Startup
+
+```Java
+public class RedisAppConfig {
+
+    //...
+
+    public RedisConnectionFactory redisConnectionFactory() {
+        // Read environment variables
+        String endpointUrl = System.getenv("REDIS_ENDPOINT_URL");
+        if (endpointUrl == null) {
+            endpointUrl = "127.0.0.1:6379";
+        }
+        String password = System.getenv("REDIS_PASSWORD");
+
+        String[] urlParts = endpointUrl.split(":");
+
+        String host = urlParts[0];
+        String port = "6379";
+
+        if (urlParts.length > 1) {
+            port = urlParts[1];
+        }
+
+        RedisStandaloneConfiguration config = new RedisStandaloneConfiguration(host, Integer.parseInt(port));
+
+        System.out.printf("Connecting to %s:%s with password: %s%n", host, port, password);
+
+        if (password != null) {
+            config.setPassword(password);
+        }
+        return new LettuceConnectionFactory(config);
+    }
+}
+```
 
 ## How to run it locally?
 
 #### Write in environment variable or Dockerfile actual connection to Redis:
+
 ```
    REDIS_ENDPOINT_URL = "Redis server URI"
    REDIS_PASSWORD = "Password to the server"

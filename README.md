@@ -7,7 +7,7 @@ Showcases how to implement chat app in Java (Spring Boot) and Redis. This exampl
 
 ## Technical Stacks
 
-- Frontend - _React_, _Socket_ (@microsoft/signalr)
+- Frontend - _React_, _Server-sent events_
 - Backend - _Spring Boot 2_, _Redis_
 
 ## How it works?

@@ -341,10 +341,20 @@ public class RedisAppConfig {
    REDIS_PASSWORD = "Password to the server"
 ```
 
-#### Run full app
+#### Run App
 
 ```sh
-./run.sh
+./mvnw spring-boot:run
+```
+
+#### Run Frontend
+
+The client is bundled with the server by default, however it's possible to run the client separately for development:
+
+```sh
+cd client
+yarn install
+yarn start
 ```
 
 ## Try it out

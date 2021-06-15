@@ -340,18 +340,29 @@ public class RedisAppConfig {
 
 ## How to run it locally?
 
-#### Write in environment variable or Dockerfile actual connection to Redis:
+#### Set the Redis endpoint and password environment variables:
 
 ```
-   REDIS_ENDPOINT_URL = "Redis server URI"
-   REDIS_PASSWORD = "Password to the server"
+$ REDIS_ENDPOINT_URL=localhost:6379
+$ REDIS_PASSWORD=foo
 ```
+
+Note that the `REDIS_PASSWORD` variable is required only if your connecting to a password-protected Redis instance.
 
 #### Run App
 
+Ensure that you have Maven wrapper installed:
+
+```sh
+mvn -N io.takari:maven:wrapper
+```
+
+The start the application:
 ```sh
 ./mvnw spring-boot:run
 ```
+
+To interact with the application, point your browser to `localhost:8080`.
 
 #### Run Frontend
 

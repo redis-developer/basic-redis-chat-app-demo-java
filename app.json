@@ -1,5 +1,14 @@
 {
   "name": "Basic Java (Spring) Redis chat",
+  "repository": "https://github.com/redis-developer/basic-redis-chat-app-demo-java",
+  "logo": "https://redis.io/images/redis-white.png",
+  "keywords": ["python", "py", "redis"],
+  "addons": ["rediscloud:30"],
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ]
   "env": {
     "REDIS_ENDPOINT_URL": {
       "description": "A Redis cloud endpoint URL.",
@@ -12,3 +21,5 @@
   },
   "stack": "container"
 }
+
+

@@ -148,9 +148,9 @@ Each user has a set of rooms associated with them.
 
 **Rooms** are sorted sets which contains messages where score is the timestamp for each message. Each room has a name associated with it.
 
-- Rooms which user belongs too are stored at `user:{userId}:rooms` as a set of room ids.
+- Rooms which user belongs to are stored at `user:{userId}:rooms` as a set of room ids.
 
-  - E.g `SADD user:Alex:rooms 1`
+  - E.g `SADD user:4:rooms 1`
 
 - Set room name: `SET room:{roomId}:name {name}`
   - E.g `SET room:1:name General`
